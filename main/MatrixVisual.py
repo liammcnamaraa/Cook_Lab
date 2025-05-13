@@ -376,6 +376,98 @@ def visualize_communities_3d(supra_adj, communities, region_labels, unique_regio
     print(f"3D community visualization saved to {output_file}")
     return fig, ax
 
+def compute_disjointedness(module_assignments):
+    """
+    Compute disjointedness for each node.
+    module_assignments: int array of shape (T, N) giving module indices per time window
+    Returns: disjointedness: float array of length N
+    """
+    T, N = module_assignments.shape
+    transitions = T - 1
+    # count independent changes per node
+    disjoint_counts = np.zeros(N)
+    for t in range(transitions):
+        before = module_assignments[t]
+        after = module_assignments[t+1]
+        for i in range(N):
+            if before[i] != after[i]:
+                # check if any other node changed with it
+                others = [j for j in range(N) if j != i]
+                joint = any((before[j] != after[j]) and (after[j] == after[i]) for j in others)
+                # if no joint movement, it's disjoint
+                if not joint:
+                    disjoint_counts[i] += 1
+    return disjoint_counts / transitions
+
+
+def compute_cohesion_strength(module_assignments):
+    """
+    Compute cohesion strength (coordinated reconfiguration) for each node.
+    Returns: cohesion_strength: float array of length N
+    """
+    T, N = module_assignments.shape
+    transitions = T - 1
+    coh_counts = np.zeros(N)
+    for t in range(transitions):
+        before = module_assignments[t]
+        after = module_assignments[t+1]
+        # for each pair of nodes, if both change into same new module, count for each
+        for i in range(N):
+            for j in range(i+1, N):
+                if before[i] != after[i] and before[j] != after[j] and after[i] == after[j]:
+                    coh_counts[i] += 1
+                    coh_counts[j] += 1
+    # normalize by transitions
+    return coh_counts / transitions
+
+
+def compute_recruitment(allegiance, network_labels):
+    """
+    Compute recruitment for each network.
+    allegiance: numpy array shape (N, N), P_ij probability nodes i and j in same module
+    network_labels: array of length N with labels 0..K-1 indicating network membership
+    Returns: recruitment: dict mapping network k to recruitment value
+    """
+    K = network_labels.max() + 1
+    recruitment = {}
+    for k in range(K):
+        idx = np.where(network_labels == k)[0]
+        if len(idx) == 0:
+            recruitment[k] = np.nan
+            continue
+        # sum over all pairs including self
+        sub = allegiance[np.ix_(idx, idx)]
+        recruitment[k] = sub.sum() / (len(idx)**2)
+    return recruitment
+
+
+def compute_integration(allegiance, network_labels):
+    """
+    Compute integration between all distinct network pairs.
+    Returns: integration: dict mapping (k1,k2) to integration value
+    """
+    K = network_labels.max() + 1
+    # first compute raw interactions
+    I = np.zeros((K, K))
+    for k1 in range(K):
+        idx1 = np.where(network_labels == k1)[0]
+        for k2 in range(K):
+            idx2 = np.where(network_labels == k2)[0]
+            if len(idx1)==0 or len(idx2)==0:
+                I[k1, k2] = np.nan
+            else:
+                sub = allegiance[np.ix_(idx1, idx2)]
+                I[k1, k2] = sub.sum() / (len(idx1)*len(idx2))
+    # recruitment is diag(I)
+    # integration normalized
+    integration = {}
+    for k1 in range(K):
+        for k2 in range(K):
+            if k1 != k2:
+                integration[(k1, k2)] = I[k1, k2] / np.sqrt(I[k1, k1] * I[k2, k2])
+    return integration
+
+
 
 if __name__ == '__main__':
     pre_file = "/Users/liamm/Documents/Cook_Lab/data/pre0adjacency.csv"
