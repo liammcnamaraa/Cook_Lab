@@ -278,7 +278,7 @@ def detect_communities_louvain(supra_adj, gamma=1.0, random_state=None):
     return community_dict, Q
 
 
-def visualize_communities_3d(supra_adj, communities, region_labels, unique_regions, output_file="community_3d_viz.png"):
+def visualize_communities_3d(supra_adj, communities, region_labels, unique_regions, output_file="CommunityMap0.png"):
     """Visualize communities in a 3D graph with time slices."""
     # Convert to numpy array if sparse
     if sparse.issparse(supra_adj):
@@ -467,20 +467,481 @@ def compute_integration(allegiance, network_labels):
                 integration[(k1, k2)] = I[k1, k2] / np.sqrt(I[k1, k1] * I[k2, k2])
     return integration
 
+def visualize_network_parameters(supra_adj, communities, region_labels, unique_regions, output_file="ParameterSummary0.png", save_figure=True):
+    """
+    Visualize the four key network parameters described in Standage et al. (2024):
+    - Disjointedness: independent module changes
+    - Cohesion Strength: coordinated module changes
+    - Recruitment: consistency of within-network interactions
+    - Integration: normalized between-network interactions
+    
+    Parameters:
+    -----------
+    supra_adj : array-like
+        The supra-adjacency matrix connecting pre and post states
+    communities : dict
+        Mapping of node indices to community IDs
+    region_labels : list
+        List of region labels
+    unique_regions : list
+        List of unique brain regions
+    output_file : str, optional
+        Output file path for the visualization
+    
+    Returns:
+    --------
+    fig : matplotlib figure
+        The complete visualization figure
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import seaborn as sns
+    from matplotlib.gridspec import GridSpec
+    
+    # Convert supra_adj to numpy array if sparse
+    if sparse.issparse(supra_adj):
+        supra_adj = supra_adj.toarray()
+    
+    # Get number of regions
+    n_regions = len(unique_regions)
+    
+    # Setup figure
+    fig = plt.figure(figsize=(20, 16))
+    gs = GridSpec(3, 4, figure=fig)
+    
+    # ---- 1. Create module assignments matrix (T, N) as in paper ----
+    # Where T=2 time windows (pre and post) and N=number of regions
+    module_assignments = np.zeros((2, n_regions), dtype=int)
+    for i in range(n_regions):
+        module_assignments[0, i] = communities[i]  # pre
+        module_assignments[1, i] = communities[i + n_regions]  # post
+    
+    # ---- 2. Compute parameters using formulas from the paper ----
+    # Compute disjointedness - measures independent module changes
+    disjointedness = compute_disjointedness(module_assignments)
+    
+    # Compute cohesion strength - measures coordinated module reconfiguration
+    cohesion = compute_cohesion_strength(module_assignments)
+    
+    # Create module allegiance matrix (P) as described in the paper
+    # P_ij = probability that regions i and j were in same module
+    allegiance = np.zeros((n_regions, n_regions))
+    for i in range(n_regions):
+        for j in range(n_regions):
+            # Check both time points
+            same_module_count = 0
+            for t in range(2):  # pre and post
+                i_module = communities[i] if t == 0 else communities[i + n_regions]
+                j_module = communities[j] if t == 0 else communities[j + n_regions]
+                if i_module == j_module:
+                    same_module_count += 1
+            allegiance[i, j] = same_module_count / 2
+    
+    # Create network labels from community assignments
+    # In the paper, networks are derived by clustering the module allegiance matrix
+    # For simplicity, we'll use the first time point community assignments 
+    network_labels = np.array([communities[i] for i in range(n_regions)])
+    
+    # Compute recruitment - consistency of within-network interactions
+    recruitment = compute_recruitment(allegiance, network_labels)
+    
+    # Compute integration - normalized between-network interactions
+    integration = compute_integration(allegiance, network_labels)
+    
+    # ---- 3. Visualize the parameters ----
+    
+    # 3.1. Disjointedness and Cohesion Strength Comparison
+    ax1 = fig.add_subplot(gs[0, :2])
+    param_df = pd.DataFrame({
+        'Region': unique_regions,
+        'Disjointedness': disjointedness,
+        'Cohesion Strength': cohesion
+    })
+    
+    # Sort by disjointedness for better visualization
+    param_df = param_df.sort_values('Disjointedness', ascending=False)
+    
+    # Reshape for plotting with seaborn
+    param_df_melt = pd.melt(
+        param_df, 
+        id_vars=['Region'], 
+        value_vars=['Disjointedness', 'Cohesion Strength']
+    )
+    
+    # Plot the comparison
+    sns.barplot(x='Region', y='value', hue='variable', data=param_df_melt, ax=ax1)
+    ax1.set_title('Disjointedness vs. Cohesion Strength by Region', fontsize=14)
+    ax1.set_xlabel('Brain Regions', fontsize=12)
+    ax1.set_ylabel('Parameter Value', fontsize=12)
+    ax1.tick_params(axis='x', rotation=90)
+    ax1.legend(title='Parameter')
+    
+    # Show only a subset of regions if there are many
+    if len(unique_regions) > 20:
+        ax1.set_xticks(ax1.get_xticks()[::len(unique_regions)//20])
+    
+    # 3.2. Module Transitions Visualization
+    ax2 = fig.add_subplot(gs[0, 2:])
+    
+    # Create transition dataframe
+    transitions = []
+    for i in range(n_regions):
+        pre_module = communities[i]
+        post_module = communities[i + n_regions]
+        transitions.append({
+            'Region': unique_regions[i],
+            'Pre Module': f'Module {pre_module}',
+            'Post Module': f'Module {post_module}'
+        })
+    
+    trans_df = pd.DataFrame(transitions)
+    
+    # Count transitions between modules
+    transition_counts = trans_df.groupby(['Pre Module', 'Post Module']).size().reset_index(name='count')
+    
+    # Get unique modules
+    pre_modules = sorted(trans_df['Pre Module'].unique())
+    post_modules = sorted(trans_df['Post Module'].unique())
+    
+    # Create transition matrix
+    trans_matrix = np.zeros((len(pre_modules), len(post_modules)))
+    for _, row in transition_counts.iterrows():
+        i = pre_modules.index(row['Pre Module'])
+        j = post_modules.index(row['Post Module'])
+        trans_matrix[i, j] = row['count']
+    
+    # Plot transition heatmap
+    sns.heatmap(trans_matrix, annot=True, fmt='g', cmap='viridis',
+                xticklabels=post_modules, yticklabels=pre_modules, ax=ax2)
+    ax2.set_title('Module Transitions (Pre → Post)', fontsize=14)
+    ax2.set_xlabel('Post Modules', fontsize=12)
+    ax2.set_ylabel('Pre Modules', fontsize=12)
+    
+    # 3.3. Recruitment by Network
+    ax3 = fig.add_subplot(gs[1, :2])
+    
+    # Convert recruitment dict to DataFrame
+    recruitment_df = pd.DataFrame({
+        'Network': [f'Network {k}' for k in recruitment.keys()],
+        'Recruitment': list(recruitment.values())
+    })
+    
+    # Plot recruitment
+    sns.barplot(x='Network', y='Recruitment', data=recruitment_df, palette='Set2', ax=ax3)
+    ax3.set_title('Recruitment by Network', fontsize=14)
+    ax3.set_xlabel('Network', fontsize=12)
+    ax3.set_ylabel('Recruitment Score (Ik,k)', fontsize=12)
+    ax3.axhline(y=0.5, color='red', linestyle='--', alpha=0.7)
+    ax3.text(len(recruitment_df)-0.5, 0.52, 'Threshold', color='red')
+    
+    # 3.4. Integration Between Networks
+    ax4 = fig.add_subplot(gs[1, 2:])
+    
+    # Convert integration dict to matrix
+    k_max = max(max(k) for k in integration.keys()) + 1
+    int_matrix = np.zeros((k_max, k_max))
+    
+    # Fill integration matrix
+    for (k1, k2), value in integration.items():
+        int_matrix[k1, k2] = value
+        int_matrix[k2, k1] = value  # Symmetric
+    
+    # Fill diagonal with 1s (self-integration)
+    np.fill_diagonal(int_matrix, 1.0)
+    
+    # Network labels
+    network_names = [f'Network {i}' for i in range(k_max)]
+    
+    # Plot integration matrix (I'k1,k2)
+    sns.heatmap(int_matrix, annot=True, fmt='.2f', cmap='coolwarm',
+                xticklabels=network_names, yticklabels=network_names, ax=ax4,
+                vmin=0, vmax=1)
+    ax4.set_title('Integration Between Networks (I\'k1,k2)', fontsize=14)
+    ax4.set_xlabel('Network', fontsize=12)
+    ax4.set_ylabel('Network', fontsize=12)
+    
+    # 3.5. Combined Parameter Summary
+    ax5 = fig.add_subplot(gs[2, :2])
+    
+    # Calculate mean values for each parameter
+    mean_disjoint = np.mean(disjointedness)
+    mean_cohesion = np.mean(cohesion)
+    mean_recruitment = np.nanmean(list(recruitment.values()))
+    mean_integration = np.nanmean(list(integration.values()))
+    
+    # Count regions that changed modules
+    changes = sum(1 for i in range(n_regions) 
+                  if communities[i] != communities[i + n_regions])
+    stability = 1 - (changes / n_regions)
+    
+    # Create summary metrics
+    summary_df = pd.DataFrame({
+        'Parameter': ['Disjointedness', 'Cohesion Strength', 'Mean Recruitment', 'Mean Integration', 'Network Stability'],
+        'Value': [mean_disjoint, mean_cohesion, mean_recruitment, mean_integration, stability]
+    })
+    
+    # Plot summary metrics
+    sns.barplot(x='Parameter', y='Value', data=summary_df, palette='Set3', ax=ax5)
+    ax5.set_title('Parameter Summary', fontsize=14)
+    ax5.set_xlabel('Parameter', fontsize=12)
+    ax5.set_ylabel('Mean Value', fontsize=12)
+    ax5.tick_params(axis='x', rotation=45)
+    
+    # 3.6. Network Statistics
+    ax6 = fig.add_subplot(gs[2, 2:])
+    
+    # Create summary text
+    summary_text = (
+        f"Network Statistics Summary\n"
+        f"==========================\n\n"
+        f"Total Regions: {n_regions}\n"
+        f"Regions Changed Modules: {changes} ({changes/n_regions:.1%})\n"
+        f"Network Stability: {stability:.1%}\n\n"
+        f"Number of Communities: {len(set(communities.values()))}\n\n"
+        f"Disjointedness: {mean_disjoint:.3f}\n"
+        f"Cohesion Strength: {mean_cohesion:.3f}\n"
+        f"Mean Recruitment: {mean_recruitment:.3f}\n"
+        f"Mean Integration: {mean_integration:.3f}\n\n"
+        f"These parameters represent the network dynamics as described in Standage et al. (2024):\n"
+        f"- Disjointedness: Degree to which regions change modules independently\n"
+        f"- Cohesion Strength: Degree to which regions change modules together\n"
+        f"- Recruitment: Consistency of within-network interactions (I_k,k)\n"
+        f"- Integration: Normalized between-network interactions (I'_k1,k2)\n"
+    )
+    
+    # Remove plot elements
+    ax6.axis('off')
+    
+    # Add descriptive text
+    ax6.text(0, 0.5, summary_text, fontsize=12, va='center',
+             bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=1'))
+    
+    # Add tight layout
+    plt.tight_layout()
+    
+    # Save figure
+    if save_figure:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        print(f"Network parameter visualization saved to {output_file}")
+    
+    return fig
 
+def analyze_brain_networks(pre_cov_file, post_cov_file, 
+                         output_dir="brain_network_analysis",
+                         threshold=0.7, omega=1.0, 
+                         resolution=1.0, random_state=42):
+    """
+    Complete analysis pipeline for brain network parameters starting from covariance matrices.
+    
+    Parameters:
+    -----------
+    pre_cov_file : str
+        Path to the pre-condition covariance matrix CSV
+    post_cov_file : str
+        Path to the post-condition covariance matrix CSV
+    output_dir : str, optional
+        Directory to save output files
+    threshold : float, optional
+        Threshold for converting covariance to edges (default=0.7)
+    omega : float, optional
+        Inter-slice coupling parameter (default=1.0)
+    resolution : float, optional
+        Resolution parameter (gamma) for community detection
+    random_state : int, optional
+        Random seed for reproducibility
+        
+    Returns:
+    --------
+    dict : 
+        Dictionary containing results and file paths
+    """
+    import os
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Define output file paths
+    pre_edges_file = os.path.join(output_dir, "pre_edges.csv")
+    post_edges_file = os.path.join(output_dir, "post_edges.csv")
+    supra_viz_path = os.path.join(output_dir, "supra_adjacency_viz.png")
+    community_viz_path = os.path.join(output_dir, "community_3d_viz.png")
+    param_viz_path = os.path.join(output_dir, "network_parameters_summary.png")
+    
+    # 1. Convert covariance matrices to edge lists
+    print("Converting covariance matrices to edge lists...")
+    
+    # For pre-condition
+    pre_df = pd.read_csv(pre_cov_file, index_col=0)
+    pre_edges = []
+    for i in range(len(pre_df)):
+        for j in range(i + 1, len(pre_df)):  # Upper triangle to avoid duplicates
+            cov = pre_df.iloc[i, j]
+            if abs(cov) >= threshold:
+                pre_edges.append((pre_df.index[i], pre_df.columns[j], cov))
+    
+    pre_edges_df = pd.DataFrame(pre_edges, columns=['source', 'target', 'covariance'])
+    pre_edges_df.to_csv(pre_edges_file, index=False)
+    
+    # For post-condition
+    post_df = pd.read_csv(post_cov_file, index_col=0)
+    post_edges = []
+    for i in range(len(post_df)):
+        for j in range(i + 1, len(post_df)):
+            cov = post_df.iloc[i, j]
+            if abs(cov) >= threshold:
+                post_edges.append((post_df.index[i], post_df.columns[j], cov))
+    
+    post_edges_df = pd.DataFrame(post_edges, columns=['source', 'target', 'covariance'])
+    post_edges_df.to_csv(post_edges_file, index=False)
+    
+    # 2. Create adjacency matrices from edge lists
+    print("Creating adjacency matrices...")
+    
+    # Get all unique regions
+    pre_regions = list(set(pre_edges_df['source'].tolist() + pre_edges_df['target'].tolist()))
+    post_regions = list(set(post_edges_df['source'].tolist() + post_edges_df['target'].tolist()))
+    all_regions = sorted(list(set(pre_regions + post_regions)))
+    n_regions = len(all_regions)
+    
+    # Create pre adjacency matrix
+    pre_adj = pd.DataFrame(0.0, index=all_regions, columns=all_regions)
+    for _, row in pre_edges_df.iterrows():
+        pre_adj.loc[row['source'], row['target']] = row['covariance']
+        pre_adj.loc[row['target'], row['source']] = row['covariance']  # Symmetric
+    
+    # Create post adjacency matrix
+    post_adj = pd.DataFrame(0.0, index=all_regions, columns=all_regions)
+    for _, row in post_edges_df.iterrows():
+        post_adj.loc[row['source'], row['target']] = row['covariance']
+        post_adj.loc[row['target'], row['source']] = row['covariance']  # Symmetric
+    
+    # Save adjacency matrices
+    pre_adj_file = os.path.join(output_dir, "pre_adjacency.csv")
+    post_adj_file = os.path.join(output_dir, "post_adjacency.csv")
+    pre_adj.to_csv(pre_adj_file)
+    post_adj.to_csv(post_adj_file)
+    
+    # 3. Create supra-adjacency matrix
+    print("Creating supra-adjacency matrix...")
+    supra_adj, region_labels, unique_regions, n_regions = create_supra_adjacency_matrix(
+        pre_adj_file, post_adj_file, omega=omega
+    )
+    
+    # 5. Detect communities using Louvain algorithm
+    print("Detecting communities...")
+    communities, Q = detect_communities_louvain(supra_adj, gamma=resolution, random_state=random_state)
+    print(f"Detected {len(set(communities.values()))} communities")
+    print(f"Modularity score (Q): {Q:.4f}")
+    
+    # 6. Visualize communities in 3D
+    print("Visualizing communities in 3D...")
+    visualize_communities_3d(supra_adj, communities, region_labels, unique_regions, 
+                           output_file=community_viz_path)
+    
+    # 7. Calculate and visualize network parameters
+    print("Calculating and visualizing network parameters...")
+    param_fig = visualize_network_parameters(
+        supra_adj, communities, region_labels, unique_regions, output_file=param_viz_path
+    )
+    
+    # 8. Create module allegiance matrix and analyze communities
+    print("Analyzing module allegiance and community structure...")
+    
+    # Create module assignments matrix (T=2 time points, N=n_regions)
+    module_assignments = np.zeros((2, n_regions), dtype=int)
+    for i in range(n_regions):
+        module_assignments[0, i] = communities[i]  # pre
+        module_assignments[1, i] = communities[i + n_regions]  # post
+    
+    # Calculate disjointedness and cohesion strength
+    disjointedness = compute_disjointedness(module_assignments)
+    cohesion = compute_cohesion_strength(module_assignments)
+    
+    # Calculate module allegiance matrix
+    allegiance = np.zeros((n_regions, n_regions))
+    for i in range(n_regions):
+        for j in range(n_regions):
+            # Check both time points
+            same_module_count = 0
+            for t in range(2):  # pre and post
+                i_module = communities[i] if t == 0 else communities[i + n_regions]
+                j_module = communities[j] if t == 0 else communities[j + n_regions]
+                if i_module == j_module:
+                    same_module_count += 1
+            allegiance[i, j] = same_module_count / 2
+    
+    # Visualization of module allegiance matrix
+    plt.figure(figsize=(10, 8))
+    plt.imshow(allegiance, cmap='viridis', interpolation='none')
+    plt.colorbar(label='Probability of same module')
+    plt.title('Module Allegiance Matrix')
+    plt.xlabel('Region Index')
+    plt.ylabel('Region Index')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "module_allegiance.png"), dpi=300, bbox_inches='tight')
+    
+    # Identify top regions by cohesion and disjointedness
+    top_cohesive_idx = np.argsort(cohesion)[-5:][::-1]  # Top 5 regions
+    top_disjointed_idx = np.argsort(disjointedness)[-5:][::-1]  # Top 5 regions
+    
+    # Create and save a summary report
+    summary_file = os.path.join(output_dir, "analysis_summary.txt")
+    with open(summary_file, 'w') as f:
+        f.write("BRAIN NETWORK ANALYSIS SUMMARY\n")
+        f.write("==============================\n\n")
+        f.write(f"Number of regions analyzed: {n_regions}\n")
+        f.write(f"Number of communities detected: {len(set(communities.values()))}\n")
+        f.write(f"Modularity score (Q): {Q:.4f}\n\n")
+        
+        f.write("Network Parameters:\n")
+        f.write(f"- Mean Disjointedness: {np.mean(disjointedness):.4f}\n")
+        f.write(f"- Mean Cohesion Strength: {np.mean(cohesion):.4f}\n\n")
+        
+        f.write("Top 5 regions with highest cohesion strength:\n")
+        for idx in top_cohesive_idx:
+            f.write(f"- Region {unique_regions[idx]}: {cohesion[idx]:.4f}\n")
+        
+        f.write("\nTop 5 regions with highest disjointedness:\n")
+        for idx in top_disjointed_idx:
+            f.write(f"- Region {unique_regions[idx]}: {disjointedness[idx]:.4f}\n")
+    
+    print(f"Analysis complete! Results saved to {output_dir}")
+    
+    # Return results dictionary
+    results = {
+        "supra_adjacency_matrix": supra_adj,
+        "region_labels": region_labels,
+        "communities": communities,
+        "modularity_score": Q,
+        "disjointedness": disjointedness,
+        "cohesion_strength": cohesion,
+        "module_allegiance": allegiance,
+        "visualizations": {
+            "supra_adjacency": supra_viz_path,
+            "communities_3d": community_viz_path,
+            "parameters": param_viz_path,
+            "module_allegiance": os.path.join(output_dir, "module_allegiance.png")
+        },
+        "summary": summary_file
+    }
+    
+    return results
 
 if __name__ == '__main__':
-    pre_file = "/Users/liamm/Documents/Cook_Lab/data/pre0adjacency.csv"
-    post_file = "/Users/liamm/Documents/Cook_Lab/data/post0adjacency.csv"
+    pre_file = "/Users/liamm/Documents/Cook_Lab/data/joe_data/Pre_3_covariance.csv"
+    post_file = "/Users/liamm/Documents/Cook_Lab/data/joe_data/Post_3_covariance.csv"
     
-    # Create supra-adjacency matrix
-    supra_adj, region_labels, unique_regions, n_regions = create_supra_adjacency_matrix(pre_file, post_file)
-
-    # Detect communities
-    communities, Q = detect_communities_louvain(supra_adj)
-    
-    print(f"Detected {len(set(communities.values()))} communities")
-    print(f"Modularity score: {Q:.4f}")   
-
-    # Visualize communities
-    visualize_communities_3d(supra_adj, communities, region_labels, unique_regions)
+    # Run the complete brain network analysis starting directly from covariance matrices
+    results = analyze_brain_networks(
+        pre_file, 
+        post_file, 
+        output_dir="analysis3",
+        threshold=0.7,  # Threshold for converting covariance to edges
+        omega=1.0,      # Inter-slice coupling parameter
+        resolution=1.0, # Resolution parameter for community detection
+        random_state=42 # For reproducibility
+    )

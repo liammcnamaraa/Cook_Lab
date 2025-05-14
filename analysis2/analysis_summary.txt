@@ -1,0 +1,24 @@
+BRAIN NETWORK ANALYSIS SUMMARY
+==============================
+
+Number of regions analyzed: 55
+Number of communities detected: 20
+Modularity score (Q): 0.9317
+
+Network Parameters:
+- Mean Disjointedness: 0.0000
+- Mean Cohesion Strength: 0.0000
+
+Top 5 regions with highest cohesion strength:
+- Region R_ventral_granular_temporal_pole: 0.0000
+- Region L_area_IPa: 0.0000
+- Region L_rostral_entorhinal_cortex: 0.0000
+- Region L_rostral_and_polar_area_36: 0.0000
+- Region L_posterior_lateral_agranular_insula_area: 0.0000
+
+Top 5 regions with highest disjointedness:
+- Region R_ventral_granular_temporal_pole: 0.0000
+- Region L_area_IPa: 0.0000
+- Region L_rostral_entorhinal_cortex: 0.0000
+- Region L_rostral_and_polar_area_36: 0.0000
+- Region L_posterior_lateral_agranular_insula_area: 0.0000
