@@ -1,1 +1,50 @@
-.DS_Store
+# Ignore all files in data directory
+/data/*
+
+# Ignore all files in analysis directories
+/analysis0/*
+/analysis1/*
+/analysis2/*
+/analysis3/*
+
+# Allow specific files if needed (examples)
+# Keep directories with .gitkeep
+!data/.gitkeep
+!analysis0/.gitkeep
+!analysis1/.gitkeep
+!analysis2/.gitkeep
+!analysis3/.gitkeep
+
+# Common Python artifacts to ignore
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+.env
+
+# Editor/IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store.DS_Store
