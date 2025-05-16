@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Python implementation for Sheaf-Theoretic Analysis Pipeline for Neuroscience Data.
+Sheaf analysis
 """
 
 import numpy as np
