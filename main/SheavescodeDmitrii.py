@@ -227,7 +227,7 @@ def compute_sheaf_laplacian_L0(M0):
 if __name__ == '__main__':
     print("Sheaf analysis running")
 
-    # Create a more complex example with non-integer values
+    
     vertex_coords = np.array([
         [0.0, 0.0],
         [1.25, 0.5],
@@ -244,7 +244,7 @@ if __name__ == '__main__':
     
     K = SimplicialComplex(simplices, vertex_coords, max_dim=2)
     
-    # Create weights with non-uniform distribution
+
     example_dissimilarities = {
         s: 0.5 + np.random.rand() * 1.5 for s in K.simplices
     }
