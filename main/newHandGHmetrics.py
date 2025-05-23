@@ -117,7 +117,7 @@ def compute_hausdorff_distance(
         min_dists_c2_to_c1 = np.min(pairwise_dist_matrix, axis=0)
         h_b_a = np.max(min_dists_c2_to_c1)
         
-        return max(h_a_b, h_b_a), point_cloud1, point_cloud2
+        return max(h_a_b, h_b_a)
 
 
 def compute_gromov_hausdorff_distance(
