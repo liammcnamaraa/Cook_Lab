@@ -69,11 +69,11 @@ def p_plot(simplex_tree):
     pairs = simplex_tree.persistence()
     if pairs:
         gudhi.plot_persistence_diagram(pairs, legend=True)
-        plt.title("Alpha Complex Persistence Diagram")
+        plt.title("Persistence Diagram")
         plt.show()
 
         gudhi.plot_persistence_barcode(pairs, legend=True)
-        plt.title("Alpha Complex Persistence Barcode")
+        plt.title("Persistence Barcode")
         plt.show()
 
 
@@ -89,7 +89,7 @@ def frobenius_norm(dist_matrix):
 
     return np.sqrt(trace)
 
-def get_diagrams(dir: str):
+def get_rips_persistence_diagrams(dir: str):
     files = [f for f in listdir(dir) if isfile(join(dir, f))]
     files.sort()
     
@@ -103,6 +103,7 @@ def get_diagrams(dir: str):
     print("diagrams generated...")
     return dgms
 
+
 def compare_h1_dgms(dgm1_, dgm2_):
     dgm1 = dgm1_[1]
     dgm2 = dgm2_[1]
@@ -112,14 +113,7 @@ def compare_h1_dgms(dgm1_, dgm2_):
 
     return [b_dist, sw_dist]
 
-def construct_cech_complex(data):
-    return
-
-def construct_alpha_complex(data):
-    return
-
-
-def kashtanov_mds(dist_matrix, n_components=3):
+def classical_mds(dist_matrix, n_components=3):
   n = dist_matrix.shape[0]
   H = np.eye(n) - np.ones((n,n)) / n
 
@@ -158,17 +152,6 @@ def some_code(point_cloud):
 
     simplex_tree.persistence(homology_coeff_field=coeff_field,
                              min_persistence=min_persistence)
-
-    # pull out a few dimensions for printing
-    for dim in homology_dimensions:
-        intervals = simplex_tree.persistence_intervals_in_dimension(dim)
-        if intervals.size:
-            print(f"\nPersistence intervals for H{dim}:")
-            for birth, death in intervals:
-                death_str = f"{death:.2f}" if np.isfinite(death) else "∞"
-                print(f"  birth {birth:.2f}, death {death_str}")
-        else:
-            print(f"\nNo intervals in H{dim} (or not computed).")
 
     # plot persistence
     p_plot(simplex_tree=simplex_tree)
@@ -260,7 +243,6 @@ def construct_chebyshev_cech_complex(point_cloud, max_simplex_dim, max_filtratio
                 # Our construction order (increasing dimension) and the property of enclosing ball radii
                 # (radius for a face <= radius for the simplex) ensure this is valid.
                 simplex_tree.insert(simplex_indices, filtration=filtration_value)
-
     return simplex_tree
 
 
@@ -338,7 +320,7 @@ def correlation_to_distance(C, alpha=1.0, eps=1e-8):
 
 if __name__ == '__main__':
     path = "/Users/douglascook/Cook_Lab/data/joe_data"
-    #d = get_diagrams(path)
+    #d = get_rips_persistence_diagrams(path)
     #d1=d["Pre_1_covariance.csv"]
     #d2=d["Post_1_covariance.csv"]
 
@@ -348,7 +330,7 @@ if __name__ == '__main__':
     dist = cor_to_dist(cor)
     print("Distance matrix generated")
     print(dist)
-    pc = kashtanov_mds(dist)
+    pc = classical_mds(dist)
     print("Point cloud generated")
     some_code(pc)
     
